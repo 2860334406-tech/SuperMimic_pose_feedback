@@ -13,3 +13,6 @@ wandb/
 .pytest_cache/
 .ruff_cache/
 experiments/**/outputs/
+
+# Published checkpoint; stored with Git LFS.
+!/models/lafan1_anchor_seed0_13h/ckpt_0144050.pt

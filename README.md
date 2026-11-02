@@ -8,7 +8,7 @@
 
 **安装环境 → 下载 G1 动作 → CSV 转 NPZ → 检查环境 → 启用位姿反馈训练 → 评测 checkpoint → 记录轨迹 → 渲染视频。**
 
-已有兼容的 checkpoint 和动作 NPZ 时，可以直接从“独立评测”和“生成视频”开始。数据、模型权重和本次实验的视频单独保存，需要自行准备；克隆代码不会自动获得训练好的策略。
+仓库提供本次训练得到的位姿反馈策略：[`models/lafan1_anchor_seed0_13h/ckpt_0144050.pt`](models/lafan1_anchor_seed0_13h/README.md)，通过 Git LFS 下载。准备好运行环境和动作 NPZ 后，可以直接评测和生成视频，无需重新训练。具体命令见 [3.4 使用仓库提供的已训练策略](#34-使用仓库提供的已训练策略)。动作数据和本次实验视频单独保存。
 
 ## 目录
 
@@ -38,6 +38,8 @@
 | `tests/` | 数据、运动学、仿真和训练链路的自动测试 | 装好环境后检查功能 |
 | `docs/` | 原项目的论文规格、实现计划、评审和实验记录，具体文件见下表 | 查实现背景；其中的历史实验数字属于原项目 |
 | `media/` | 原项目随代码提供的 BONES-SEED 演示媒体 | 了解原项目展示；本次生成的视频存到各自的 `logs/<run>/demo/` |
+| `models/lafan1_anchor_seed0_13h/` | 本次训练好的位姿反馈 checkpoint、配置、评测结果及校验值 | 直接加载策略进行评测、录制或续训 |
+| `.gitattributes` | 指定已发布的模型文件通过 Git LFS 管理 | 克隆和提交大文件时使用 |
 | `pyproject.toml` | Python 要求、依赖、软件源、开发依赖及 `sm-train` 命令入口 | 安装依赖或查命令入口 |
 | `uv.lock` | 锁定具体依赖版本及来源 | 用 `uv sync --locked` 重建环境 |
 | `.python-version` | 指定 Python 3.12 | 供 uv 选择 Python |
@@ -189,11 +191,20 @@ nvidia-smi
 
 ### 3.1 克隆项目
 
+权重约 206 MiB，使用 [Git LFS](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-git-large-file-storage) 保存。Ubuntu 上先安装 Git LFS（已经安装时可跳过安装命令）：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git-lfs
+git lfs install
+```
+
 在准备存放代码和训练结果的磁盘目录下执行：
 
 ```bash
 git clone https://github.com/2860334406-tech/SuperMimic_pose_feedback.git
 cd SuperMimic_pose_feedback
+git lfs pull
 ```
 
 后文所有相对路径都以这个仓库根目录为起点。已有项目时直接进入原目录，不必重复克隆。
@@ -240,6 +251,41 @@ PY
 ```
 
 最后应输出 `计算结果: 45`。
+
+### 3.4 使用仓库提供的已训练策略
+
+模型位于 `models/lafan1_anchor_seed0_13h/ckpt_0144050.pt`。这是 LAFAN1 位姿反馈实验的最终模型，`anchor_obs=True`，完成 144,050 次环境迭代。归档的 40 条动作整段评测平均归一化回报为 **0.9360**，提前终止 **0/40**，逐动作数据见同目录 `benchmark.json`。
+
+模型目录同时提供 `config.json` 和 `SHA256SUMS`。下载后校验：
+
+```bash
+git lfs pull
+(cd models/lafan1_anchor_seed0_13h && sha256sum -c SHA256SUMS)
+```
+
+按第 4 节准备好动作数据后，即可运行以下命令。新的评测输出放在 `logs/` 中：
+
+```bash
+mkdir -p logs/pretrained_anchor_eval
+
+MUJOCO_GL=disable env -u PYTHONPATH uv run --locked python scripts/eval_benchmark.py \
+  --ckpt models/lafan1_anchor_seed0_13h/ckpt_0144050.pt \
+  --npz-dir data/npz/lafan1 --num-envs 40 \
+  --out logs/pretrained_anchor_eval/benchmark.json
+
+MUJOCO_GL=disable env -u PYTHONPATH uv run --locked python scripts/media/record_rollout.py \
+  --ckpt models/lafan1_anchor_seed0_13h/ckpt_0144050.pt \
+  --npz-dir data/npz/lafan1 --clips walk4_subject1 \
+  --out logs/pretrained_anchor_eval/rollouts.npz
+
+MUJOCO_GL=egl env -u PYTHONPATH uv run --locked python scripts/media/render_rollout.py \
+  --traj logs/pretrained_anchor_eval/rollouts.npz \
+  --out-dir logs/pretrained_anchor_eval/videos \
+  --clips walk4_subject1 --segments walk4_subject1:25:45 \
+  --fps 25 --width 960 --height 540
+```
+
+最后一步需要 ffmpeg，安装方法见第 10.2 节。所得视频为 `logs/pretrained_anchor_eval/videos/walk4_subject1.mp4`。这个 checkpoint 包含策略、世界模型、critic 和优化器状态，可用于推理或续训。
 
 ## 4. 准备动作数据
 
@@ -577,6 +623,7 @@ MUJOCO_GL=disable env -u PYTHONPATH uv run --locked python scripts/eval_benchmar
 | 渲染找不到 ffmpeg | 安装 ffmpeg，并确认 `ffmpeg -version` 可执行 |
 | `no clips under ...` 或 `clips not found` | 检查当前工作目录、NPZ 路径和不带扩展名的动作名称 |
 | checkpoint 加载出现维度不匹配 | 检查网络结构和 `anchor_obs`；评测脚本会自动读取 checkpoint 配置，续训命令需要显式匹配 |
+| 下载的 `.pt` 只有一百多字节，加载提示文件格式错误 | 当前拿到的是 LFS 指针文本；安装 Git LFS 后在仓库根目录运行 `git lfs pull`，再做 SHA256 校验 |
 | 测试显示大量 `s` | 查看跳过原因，补齐 CUDA 和 LAFAN1 NPZ 后再运行 |
 | 首次运行较长时间没有新日志 | 可能正在编译 GPU 内核；结合进程、GPU 使用情况和后续日志判断 |
 | TensorBoard 提示缺少 TensorFlow、以 reduced feature set 运行 | 本项目使用的标量曲线仍可查看 |
@@ -587,10 +634,10 @@ MUJOCO_GL=disable env -u PYTHONPATH uv run --locked python scripts/eval_benchmar
 
 代码与实验输出分别保存：
 
-- **GitHub**：源代码、运行脚本、说明文档、`pyproject.toml` 和 `uv.lock`。
+- **GitHub**：源代码、运行脚本、说明文档、`pyproject.toml`、`uv.lock`，以及 `models/` 中通过 Git LFS 发布的最终位姿反馈模型和配套资料。
 - **实验归档**：`config.json`、使用的 Git commit、checkpoint、评测 JSON、TensorBoard 日志、曲线、视频以及数据来源和转换参数。
 
-`.gitignore` 默认忽略根目录下的 `data/`、`logs/`，以及 `.venv/`、`*.pt`、`*.npz` 等。GitHub 上能看到代码，不代表权重和数据也已备份。
+`.gitignore` 默认忽略根目录下的 `data/`、`logs/`，以及 `.venv/`、`*.pt`、`*.npz` 等；为 `models/lafan1_anchor_seed0_13h/ckpt_0144050.pt` 单独设置了例外，并由 `.gitattributes` 指定 Git LFS。其他训练过程中的 checkpoint 和数据仍需单独归档。
 
 每次实验可以记录当前代码版本：
 

@@ -1,0 +1,1 @@
+models/lafan1_anchor_seed0_13h/*.pt filter=lfs diff=lfs merge=lfs -text
