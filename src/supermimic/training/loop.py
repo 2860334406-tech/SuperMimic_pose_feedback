@@ -132,8 +132,22 @@ class Trainer:
         self.wm_trainer.opt.load_state_dict(ck["wm_opt"])
         self.policy_trainer.opt.load_state_dict(ck["policy_opt"])
         self.policy_trainer.critic_opt.load_state_dict(ck["critic_opt"])
-        self.command.bin_return.copy_(ck["bin_return"])
-        self.command.bin_memory.copy_(ck["bin_memory"])
+        # Sampling bins refer to frames in a particular motion library.  A
+        # checkpoint reused with a different dataset must start with fresh
+        # sampling statistics, even when the two libraries have equal sizes.
+        old_data = ck.get("config", {}).get("data", {})
+        same_library = (
+            str(old_data.get("npz_dir")) == str(self.cfg.data.npz_dir)
+            and old_data.get("clips") == self.cfg.data.clips
+            and old_data.get("manifest") == (str(self.cfg.data.manifest) if self.cfg.data.manifest is not None else None)
+            and ck["bin_return"].shape == self.command.bin_return.shape
+            and ck["bin_memory"].shape == self.command.bin_memory.shape
+        )
+        if same_library:
+            self.command.bin_return.copy_(ck["bin_return"])
+            self.command.bin_memory.copy_(ck["bin_memory"])
+        else:
+            print("[INFO] new motion library on resume; reset return-based sampling statistics")
         self.iteration = ck["iteration"]
         self.start_iteration = self.iteration
         self.num_updates = ck["num_updates"]
